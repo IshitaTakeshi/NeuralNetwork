@@ -1,4 +1,9 @@
+include("utils.jl")
+
+
 const AA = AbstractArray
+
+srand(1234)
 
 
 type Word2Vec
@@ -19,14 +24,15 @@ function embed(words)
     W = Matrix{Float64}(model.n_embedding, length(words))
     for (i, index) in indices
         if index == 0
-            W[:, i]
+            throw("Word not found in the vocabulary")
         end
         W[:, i] = Wᵢ[:, index]
     end
 end
 
 
-function save()
+function save(model::Word2Vec)
+
 end
 
 
@@ -36,8 +42,8 @@ end
 
 
 function init_weights(model::Word2Vec)
-    model.Wᵢ = ones(model.n_embedding, model.n_vocabulary)
-    model.Wₒ = ones(model.n_vocabulary, model.n_embedding)
+    model.Wᵢ = randn(model.n_embedding, model.n_vocabulary)
+    model.Wₒ = randn(model.n_vocabulary, model.n_embedding)
     return model
 end
 
@@ -67,11 +73,11 @@ end
 
 
 function epoch!(model::Word2Vec, indices::AA{Int, 1})
-    loss = 0
+    loss = Loss()
     for (word_index, context) in train_set_generator(model.n_context, indices)
         loss += update!(model, word_index, context)
     end
-    return loss
+    return mean(loss)
 end
 
 
@@ -91,14 +97,14 @@ end
 cross_entropy_loss(word_index, y) = -log(y[word_index])
 
 
-ΔWₒ(h::AA{Float64, 1}, y::AA{Float64, 1}, t::AA{Float64, 1}) = (y - t) * h'
+ΔWₒ(h::AA{Float64, 1}, Δ::AA{Float64, 1}) = Δ * h'
 
 
-Δwᵢ(Wₒ::AA{Float64, 2}, y::AA{Float64, 1}, t::AA{Float64, 1}) = Wₒ' * (y - t)
+Δwᵢ(Wₒ::AA{Float64, 2}, Δ::AA{Float64, 1}) = Wₒ' * Δ
 
 
 function update!(model::Word2Vec, word_index::Int, context::AA{Int, 1})
-    loss = 0
+    loss = Loss()
     for context_index in context
         t = zeros(model.n_vocabulary)
         t[context_index] = 1
@@ -106,10 +112,11 @@ function update!(model::Word2Vec, word_index::Int, context::AA{Int, 1})
         h = view(model.Wᵢ, :, word_index)  # equivalent to h = model.Wᵢ * x
         y = softmax(model.Wₒ * h)
 
-        model.Wₒ -= model.η * ΔWₒ(h, y, t)
-        model.Wᵢ[:, word_index] -= model.η * Δwᵢ(model.Wₒ, y, t)
+        Δ = y - t
+        model.Wₒ -= model.η * ΔWₒ(h, Δ)
+        model.Wᵢ[:, word_index] -= model.η * Δwᵢ(model.Wₒ, Δ)
 
         loss += cross_entropy_loss(word_index, y)
     end
-    return loss
+    return mean(loss)
 end
